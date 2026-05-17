@@ -1,0 +1,12 @@
+{
+  "name": "vanilla-sky-monitor",
+  "version": "1.0.0",
+  "description": "Flight ticket monitor",
+  "main": "monitor.js",
+  "scripts": {
+    "start": "node monitor.js"
+  },
+  "dependencies": {
+    "playwright": "^1.42.0"
+  }
+}
