@@ -11,7 +11,6 @@ const FLIGHTS = [
     { from: 'Mestia', to: 'Natakhtari', date: '06/17/2026' },
     { from: 'Mestia', to: 'Natakhtari', date: '06/18/2026' }
 ];
-
 async function sendDiscordAlert(message, imagePath = null) {
     console.log(message);
     if (!WEBHOOK_URL) return;
