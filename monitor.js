@@ -3,7 +3,6 @@ const { chromium } = require('playwright');
 const BASE_URL = 'https://ticket.vanillasky.ge/en/flights-form';
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
-// Your specific itinerary
 const FLIGHTS = [
     { from: 'Natakhtari', to: 'Mestia', date: '2026-06-13' },
     { from: 'Natakhtari', to: 'Mestia', date: '2026-06-14' },
@@ -26,17 +25,39 @@ async function sendDiscordAlert(message) {
 
 async function checkFlights() {
     const browser = await chromium.launch({ headless: true });
+    // Adding extra stealth headers to look less like a bot
     const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        extraHTTPHeaders: {
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+        }
     });
+    
     const page = await context.newPage();
 
     for (const flight of FLIGHTS) {
         try {
-            console.log(`Checking flights from ${flight.from} to ${flight.to} for ${flight.date}...`);
-            await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+            console.log(`\n--- Checking flights from ${flight.from} to ${flight.to} for ${flight.date}... ---`);
+            
+            // Wait until the network is mostly quiet, not just the DOM
+            const response = await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 30000 });
+            
+            console.log(`HTTP Status: ${response.status()}`);
+            console.log(`Page Title: ${await page.title()}`);
+
+            // Quick check if we are blocked
+            const html = await page.content();
+            if (html.toLowerCase().includes('cloudflare') || html.toLowerCase().includes('checking your browser')) {
+                console.log("🚨 ALERT: GitHub Actions IP is being blocked by a security firewall (Cloudflare).");
+            }
+
+            // Wait specifically for the dropdown to appear before trying to interact with it
+            console.log("Waiting for form dropdowns to render...");
+            await page.waitForSelector('select[name="direction_from"]', { timeout: 15000 });
 
             // Select routing
+            console.log("Filling out form...");
             await page.selectOption('select[name="direction_from"]', { label: flight.from });
             await page.selectOption('select[name="direction_to"]', { label: flight.to });
 
@@ -60,11 +81,16 @@ async function checkFlights() {
             }
 
         } catch (error) {
-            console.error(`Error checking ${flight.from} -> ${flight.to} on ${flight.date}:`, error);
+            console.error(`❌ Error checking ${flight.from} -> ${flight.to} on ${flight.date}:`);
+            console.error(error.message);
+            
+            // Print a snippet of what the page actually says to help us debug
+            const currentText = await page.innerText('body').catch(() => 'Could not retrieve page text.');
+            console.log(`\nWhat the page currently says (First 200 chars):\n${currentText.substring(0, 200)}...`);
         }
         
-        // Wait 2 seconds between checks so Vanilla Sky doesn't block the IP
-        await page.waitForTimeout(2000); 
+        // Wait 3 seconds between checks
+        await page.waitForTimeout(3000); 
     }
 
     await browser.close();
