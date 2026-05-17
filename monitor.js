@@ -4,13 +4,14 @@ const fs = require('fs');
 const SEARCH_URL = 'https://ticket.vanillasky.ge/en/tickets';
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
-// FIXED: Vanilla Sky expects MM/DD/YYYY format!
+// Correct format: MM/DD/YYYY
 const FLIGHTS = [
     { from: 'Natakhtari', to: 'Mestia', date: '06/13/2026' },
     { from: 'Natakhtari', to: 'Mestia', date: '06/14/2026' },
     { from: 'Mestia', to: 'Natakhtari', date: '06/17/2026' },
     { from: 'Mestia', to: 'Natakhtari', date: '06/18/2026' }
 ];
+
 async function sendDiscordAlert(message, imagePath = null) {
     console.log(message);
     if (!WEBHOOK_URL) return;
@@ -52,7 +53,7 @@ async function checkFlights() {
             await page.waitForTimeout(1000); 
             await page.selectOption('select[name="arrive"]', { label: flight.to });
 
-            // Force fill the date in MM/DD/YYYY format
+            // Force fill the date
             await page.evaluate((dateVal) => {
                 const dateInput = document.querySelector('input[name="date_picker"]');
                 if (dateInput) {
