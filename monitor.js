@@ -1,6 +1,7 @@
 const { chromium } = require('playwright');
 
-const BASE_URL = 'https://ticket.vanillasky.ge/en/flights-form';
+// We need to start at the actual ticket search portal!
+const SEARCH_URL = 'https://ticket.vanillasky.ge/en/tickets';
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 const FLIGHTS = [
@@ -18,20 +19,15 @@ async function sendDiscordAlert(message) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-            content: `🏔️ **Vanilla Sky Alert:** ${message}\n🎫 **Book here:** ${BASE_URL}` 
+            content: `🏔️ **Vanilla Sky Alert:** ${message}\n🎫 **Book here:** ${SEARCH_URL}` 
         })
     });
 }
 
 async function checkFlights() {
     const browser = await chromium.launch({ headless: true });
-    // Adding extra stealth headers to look less like a bot
     const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        extraHTTPHeaders: {
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
-        }
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     });
     
     const page = await context.newPage();
@@ -40,37 +36,41 @@ async function checkFlights() {
         try {
             console.log(`\n--- Checking flights from ${flight.from} to ${flight.to} for ${flight.date}... ---`);
             
-            // Wait until the network is mostly quiet, not just the DOM
-            const response = await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 30000 });
+            await page.goto(SEARCH_URL, { waitUntil: 'networkidle', timeout: 30000 });
             
-            console.log(`HTTP Status: ${response.status()}`);
-            console.log(`Page Title: ${await page.title()}`);
-
-            // Quick check if we are blocked
-            const html = await page.content();
-            if (html.toLowerCase().includes('cloudflare') || html.toLowerCase().includes('checking your browser')) {
-                console.log("🚨 ALERT: GitHub Actions IP is being blocked by a security firewall (Cloudflare).");
+            // Wait specifically for the first dropdown to appear
+            console.log("Looking for the booking form...");
+            
+            // Check if the expected selectors exist
+            const fromSelect = await page.$('select[name="direction_from"]');
+            
+            if (!fromSelect) {
+                console.log("⚠️ Could not find the standard dropdown menu. Vanilla Sky might have updated their form structure.");
+                
+                // Debugging: Print all select elements and inputs on the page so we know exactly what they are called
+                const allSelects = await page.$$eval('select', selects => selects.map(s => s.name || s.id));
+                const allInputs = await page.$$eval('input', inputs => inputs.map(i => i.name || i.id));
+                console.log(`Found Dropdowns on page: ${JSON.stringify(allSelects)}`);
+                console.log(`Found Inputs on page: ${JSON.stringify(allInputs)}`);
+                
+                throw new Error("Form selectors mismatch.");
             }
 
-            // Wait specifically for the dropdown to appear before trying to interact with it
-            console.log("Waiting for form dropdowns to render...");
-            await page.waitForSelector('select[name="direction_from"]', { timeout: 15000 });
-
-            // Select routing
-            console.log("Filling out form...");
+            // Fill out the form
+            console.log("Form found! Filling out details...");
             await page.selectOption('select[name="direction_from"]', { label: flight.from });
             await page.selectOption('select[name="direction_to"]', { label: flight.to });
 
             // Input date
             await page.fill('input[name="departure_date"]', flight.date);
 
-            // Submit form and wait for the results to render
+            // Submit form and wait for the results page to render
             await Promise.all([
                 page.click('button[type="submit"]'),
                 page.waitForLoadState('networkidle')
             ]);
 
-            // Evaluate the output
+            // Evaluate the output on the next page
             const pageText = await page.innerText('body');
             const noFlightsText = "Please choose different dates"; 
 
@@ -83,10 +83,6 @@ async function checkFlights() {
         } catch (error) {
             console.error(`❌ Error checking ${flight.from} -> ${flight.to} on ${flight.date}:`);
             console.error(error.message);
-            
-            // Print a snippet of what the page actually says to help us debug
-            const currentText = await page.innerText('body').catch(() => 'Could not retrieve page text.');
-            console.log(`\nWhat the page currently says (First 200 chars):\n${currentText.substring(0, 200)}...`);
         }
         
         // Wait 3 seconds between checks
