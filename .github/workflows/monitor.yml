@@ -2,13 +2,14 @@ name: Vanilla Sky Ticket Monitor
 
 on:
   schedule:
-    # Runs at minute 0 and 30 past every hour
     - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
   scrape-and-alert:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -16,7 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install Packages & Playwright Browsers
         run: |
