@@ -1,25 +1,36 @@
 const { chromium } = require('playwright');
+const fs = require('fs');
 
 const SEARCH_URL = 'https://ticket.vanillasky.ge/en/tickets';
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
+// Changed format to DD/MM/YYYY which is standard for their region
 const FLIGHTS = [
-    { from: 'Natakhtari', to: 'Mestia', date: '2026-06-13' },
-    { from: 'Natakhtari', to: 'Mestia', date: '2026-06-14' },
-    { from: 'Mestia', to: 'Natakhtari', date: '2026-06-17' },
-    { from: 'Mestia', to: 'Natakhtari', date: '2026-06-18' }
+    { from: 'Natakhtari', to: 'Mestia', date: '13/06/2026' },
+    { from: 'Natakhtari', to: 'Mestia', date: '14/06/2026' },
+    { from: 'Mestia', to: 'Natakhtari', date: '17/06/2026' },
+    { from: 'Mestia', to: 'Natakhtari', date: '18/06/2026' }
 ];
 
-async function sendDiscordAlert(message) {
+async function sendDiscordAlert(message, imagePath = null) {
     console.log(message);
     if (!WEBHOOK_URL) return;
+
+    const formData = new FormData();
+    formData.append('payload_json', JSON.stringify({ 
+        content: `🏔️ **Vanilla Sky Alert:** ${message}\n🎫 **Book here:** ${SEARCH_URL}` 
+    }));
+
+    // If we took a screenshot, attach it directly to the Discord message!
+    if (imagePath && fs.existsSync(imagePath)) {
+        const buffer = fs.readFileSync(imagePath);
+        const blob = new Blob([buffer], { type: 'image/png' });
+        formData.append('file', blob, 'screenshot.png');
+    }
     
     await fetch(WEBHOOK_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            content: `🏔️ **Vanilla Sky Alert:** ${message}\n🎫 **Book here:** ${SEARCH_URL}` 
-        })
+        body: formData
     });
 }
 
@@ -43,23 +54,16 @@ async function checkFlights() {
             await page.waitForTimeout(1000); 
             await page.selectOption('select[name="arrive"]', { label: flight.to });
 
-            // FORCE FILL THE DATE: Bypass the custom calendar UI restrictions using JavaScript
+            // Force fill the date
             await page.evaluate((dateVal) => {
                 const dateInput = document.querySelector('input[name="date_picker"]');
                 if (dateInput) {
-                    dateInput.removeAttribute('readonly'); // Remove UI block
-                    dateInput.value = dateVal;             // Set our June date
+                    dateInput.removeAttribute('readonly'); 
+                    dateInput.value = dateVal;             
                     dateInput.dispatchEvent(new Event('input', { bubbles: true }));
                     dateInput.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             }, flight.date);
-
-            // Playwright fallback just in case the element accepts direct input
-            try {
-                await page.fill('input[name="date_picker"]', flight.date, { force: true });
-            } catch (e) {
-                console.log("Normal fill skipped, relying on JavaScript injection.");
-            }
 
             // Submit form
             await Promise.all([
@@ -70,24 +74,7 @@ async function checkFlights() {
             await page.waitForTimeout(2000);
 
             const pageText = await page.innerText('body');
-            const noFlightsText = "There are no available tickets. Please choose different dates."; 
-
-            if (pageText.includes(noFlightsText)) {
-                console.log(`[${new Date().toISOString()}] No tickets yet for ${flight.from} -> ${flight.to} on ${flight.date}.`);
-            } else {
-                console.log(`🚨 TICKETS MAY BE LIVE! Printing snippet of page to verify date:\n${pageText.substring(0, 250)}`);
-                await sendDiscordAlert(`Tickets might be live! The error message is missing for **${flight.from} -> ${flight.to}** on **${flight.date}**.`);
-            }
-
-        } catch (error) {
-            console.error(`❌ Error checking ${flight.from} -> ${flight.to} on ${flight.date}:`);
-            console.error(error.message);
-        }
-        
-        await page.waitForTimeout(3000); 
-    }
-
-    await browser.close();
-}
-
-checkFlights();
+            
+            // 1. Negative Check: Did it explicitly say no tickets?
+            if (pageText.includes("There are no available tickets")) {
+                console.log(`[${new Date().toISOString()}] No tickets yet for ${
