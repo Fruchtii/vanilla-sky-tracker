@@ -4,7 +4,6 @@ const fs = require('fs');
 const SEARCH_URL = 'https://ticket.vanillasky.ge/en/tickets';
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
-// Changed format to DD/MM/YYYY which is standard for their region
 const FLIGHTS = [
     { from: 'Natakhtari', to: 'Mestia', date: '13/06/2026' },
     { from: 'Natakhtari', to: 'Mestia', date: '14/06/2026' },
@@ -21,7 +20,6 @@ async function sendDiscordAlert(message, imagePath = null) {
         content: `🏔️ **Vanilla Sky Alert:** ${message}\n🎫 **Book here:** ${SEARCH_URL}` 
     }));
 
-    // If we took a screenshot, attach it directly to the Discord message!
     if (imagePath && fs.existsSync(imagePath)) {
         const buffer = fs.readFileSync(imagePath);
         const blob = new Blob([buffer], { type: 'image/png' });
@@ -75,6 +73,32 @@ async function checkFlights() {
 
             const pageText = await page.innerText('body');
             
-            // 1. Negative Check: Did it explicitly say no tickets?
+            // 1. Negative Check
             if (pageText.includes("There are no available tickets")) {
-                console.log(`[${new Date().toISOString()}] No tickets yet for ${
+                console.log(`[${new Date().toISOString()}] No tickets yet for ${flight.date}.`);
+            } 
+            // 2. Positive Check
+            else if (pageText.includes("GEL") || pageText.includes("Total price") || pageText.includes("Add passenger")) {
+                console.log("🚨 TICKETS ARE LIVE! Taking screenshot...");
+                const screenshotPath = `success_${flight.date.replace(/\//g, '-')}.png`;
+                await page.screenshot({ path: screenshotPath, fullPage: true });
+                
+                await sendDiscordAlert(`Tickets are LIVE for **${flight.from} -> ${flight.to}** on **${flight.date}**!`, screenshotPath);
+            } 
+            // 3. Fallback
+            else {
+                console.log(`⚠️ Form submission failed for ${flight.date}. The website rejected the input and reloaded the page.`);
+            }
+
+        } catch (error) {
+            console.error(`❌ Error checking ${flight.from} -> ${flight.to} on ${flight.date}:`);
+            console.error(error.message);
+        }
+        
+        await page.waitForTimeout(3000); 
+    }
+
+    await browser.close();
+}
+
+checkFlights();
