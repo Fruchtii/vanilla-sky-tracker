@@ -1,0 +1,29 @@
+name: Vanilla Sky Ticket Monitor
+
+on:
+  schedule:
+    # Runs at minute 0 and 30 past every hour
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape-and-alert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/select-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Packages & Playwright Browsers
+        run: |
+          npm install
+          npx playwright install chromium --with-deps
+
+      - name: Run Scraper
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: npm start
